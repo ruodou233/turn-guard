@@ -1,4 +1,6 @@
-# turn-guard
+# Claude Code 流程提醒钩子｜Claude Code Workflow Hooks
+
+Claude Code hooks for background task follow-ups and reminders to review plans and completed changes.
 
 Agent 一说“完成了”，你还得翻回去看：后台任务有人接着管吗，方案该不该送审，改完有没有再查一遍？turn-guard 是挂在 Claude Code 回合上的流程提醒 hook，把这些容易漏掉的步骤带回对话。**L1** 用确定性规则做同步提醒；**L2** 是默认关闭的可选语义分类器，用模型判断当前内容是否到了该送审的时候。
 
