@@ -1,0 +1,38 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "你在检查 Claude 这一轮能不能就此收尾。输入 JSON：$ARGUMENTS\n\n按顺序判断：\n1. stop_hook_active 为 true：已经提醒过一次，返回 {\"ok\": true}。\n2. last_assistant_message 宣称方案已定稿，或宣称代码、文档、配置改动已经完成，却没交代送审、复查、测试结果或自查结论：返回 {\"ok\": false, \"reason\": \"宣称完成但没交代复查。先复查一遍（重读改动、跑测试，重要方案送审），把结论补进回复再结束。\"}。\n3. 其他情况（闲聊、回答问题、进度汇报、已经交代了复查）：返回 {\"ok\": true}。"
+          },
+          {
+            "type": "command",
+            "command": "jq -c 'if (.stop_hook_active | not) and ((.background_tasks // []) | length > 0) then {hookSpecificOutput: {hookEventName: \"Stop\", additionalContext: (\"还有后台任务没收尾：\" + ([.background_tasks[] | \"\\(.type) \\(.description)\"] | join(\"；\")) + \"。告诉用户它们在跑什么、结果出来后怎么接着处理；用不上了就停掉。\")}} else empty end'"
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "osascript -e 'on run argv' -e 'display notification (item 1 of argv) with title \"Claude Code 回合中断\" sound name \"Basso\"' -e 'end run' \"$(jq -r '.error + \"：\" + (.last_assistant_message // \"\")')\""
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r 'if (.prompt // \"\" | test(\"会审|送审|cross-review\"; \"i\")) then \"用户提到了送审：先读 cross-review 的 SKILL.md，按里面的步骤发起，别凭记忆走。\" else empty end'"
+          }
+        ]
+      }
+    ]
+  }
+}
