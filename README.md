@@ -12,8 +12,8 @@ turn-guard 管的就是这件事：把回合里容易漏的步骤带回对话。
 
 | 场景 | 配方 | 平台能力 | 需要的版本 |
 |---|---|---|---|
-| 宣称做完了，却没交代复查 | [1](#配方-1宣称完成却没交代复查就别收尾) | Stop 上的 `type: "prompt"` hook | 2.1.47+ |
-| 后台任务还在跑，Agent 就收尾了 | [2](#配方-2后台任务还在跑先交代清楚再停) | Stop 输入里的 `background_tasks` | 2.1.163+ |
+| 宣称做完了，却没交代复查 | [1](#配方-1宣称完成却没交代复查就别收尾) | Stop 上的 `type: "prompt"` hook，读 `last_assistant_message` | 2.1.47+ |
+| 后台任务还在跑，Agent 就收尾了 | [2](#配方-2后台任务还在跑先交代清楚再停) | Stop 输入里的 `background_tasks`，返回 `additionalContext` | 2.1.163+ |
 | 回合被限流、502 打断，你不知道 | [3](#配方-3回合被-api-错误打断时弹系统通知) | `StopFailure` 事件 | 2.1.78+ |
 | 活没干完就停下来等你 | [4](#配方-4没做完就接着做goal) | `/goal` 命令 | 2.1.139+ |
 | 想用 markdown 写提醒规则 | [5](#配方-5想用-markdown-写提醒规则hookify) | 官方 hookify 插件 | — |
@@ -43,11 +43,11 @@ turn-guard 管的就是这件事：把回合里容易漏的步骤带回对话。
 - 每个回合结束时，Claude Code 把这段 prompt 连同本轮的 Stop 输入（含 `last_assistant_message`、`stop_hook_active`）和对话记录交给后台小模型判断。返回 `ok: false` 时，`reason` 会作为下一条指令交回 Claude，它接着把复查做了。
 - Stop 上不用写 `continueOnBlock`：按官方文档，这个字段只在 PreToolUse、PostToolUse、TeammateIdle 上起作用；Stop 上 `ok: false` 本来就会接着干。
 - 第 1 条规则让同一轮只提醒一次。平台另有兜底：连续拦 8 次就强制结束（`CLAUDE_CODE_STOP_HOOK_BLOCK_CAP` 可调）。
-- 默认用后台小模型、30 秒超时，`model`、`timeout` 字段可改。判断走的是你当前会话的同一个 provider（模型服务商），每回合多一次小模型调用。
+- 默认 30 秒超时，用 Claude Code 跑后台功能的那个模型判断：订阅和 Anthropic API key 下是 Haiku；经 `ANTHROPIC_BASE_URL` 走网关时默认是**主模型**，云平台默认是 Sonnet 或主模型。想压成本，就在 hook 里写 `"model"`，或者设 `ANTHROPIC_DEFAULT_HAIKU_MODEL`。`timeout` 也可以改。每回合多一次模型调用，走你当前会话的 provider（模型服务商）。
 - 拦下来时界面会显示一行 `Stop hook error`，这是拦截生效的正常样子，不是配置坏了。
 - 换成你自己的流程：改第 2 条的判断和 `reason` 里的文字。要让它真去读文件、看测试结果，可以把 `type` 换成实验性的 `"agent"`，它能用 Read、Grep 自己查，默认超时 60 秒。
 
-**实测**（2.1.325）：让 Claude 只回一句"已完成全部代码改动，可以合并了"。hook 判 `ok: false` 并把理由交回；Claude 补了一段更正，第二次判断 `ok: true`，回合结束。评估走的是后台小模型 haiku。
+**实测**（2.1.325）：让 Claude 只回一句"已完成全部代码改动，可以合并了"。hook 判 `ok: false` 并把理由交回；Claude 补了一段更正，第二次判断 `ok: true`，回合结束。评估走的是 haiku（作者设了 `ANTHROPIC_DEFAULT_HAIKU_MODEL`）。
 
 ## 配方 2：后台任务还在跑，先交代清楚再停
 
@@ -110,7 +110,7 @@ turn-guard 管的就是这件事：把回合里容易漏的步骤带回对话。
 - `/goal` 就是一个只在当前会话生效的 prompt 型 Stop hook：每轮结束，小模型对照条件判断，没达成就自动开下一轮；达成、或判定做不到，就自动清掉。`/goal` 不带参数看进度，`/goal clear` 取消。
 - 适合有明确终点、能在对话里证明的活：迁移到每个调用点都编译通过，按验收标准把设计稿实现完，把一批 issue 清空。
 - 不适合"每回合都该检查"的常驻规则，比如配方 1 的复查提醒。那种写进 settings，对所有会话生效。
-- 评估模型不跑命令也不读文件，只看对话，所以条件要写成 Claude 的输出能证明的："`npm test` 退出码 0"、"`git status` 干净"。想限时就加一句"跑满 N 轮就停"。
+- 评估模型不跑命令也不读文件，只看对话，所以条件要写成 Claude 的输出能证明的："`npm test` 退出码 0"、"`git status` 干净"。想限时就加一句"跑满 N 轮就停"。评估模型的选法同配方 1。
 - 后台任务还在跑时不评估，等它结束再判；等满 30 分钟会自动提醒 Claude 去看一眼。想无人值守，配合 auto mode（自动批准工具调用）用；`claude -p "/goal …"` 也能跑。
 
 ## 配方 5：想用 markdown 写提醒规则：hookify
